@@ -1,7 +1,8 @@
 "use client"
-
+import { uploadToPinata } from "@/lib/pinata"
 import type React from "react"
 import { motion } from "framer-motion"
+import { getIPFSClient } from "@/lib/ipfs"
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,6 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { storeReportOnSolana } from "@/lib/solana"
+import { useWallet } from "@solana/wallet-adapter-react"
 
 export default function DoctorUploadReportPage() {
   const [files, setFiles] = useState<File[]>([])
@@ -18,9 +21,17 @@ export default function DoctorUploadReportPage() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadedReports, setUploadedReports] = useState<
-    Array<{ name: string; type: string; patient: string; date: string; hash: string; blockchainAddress: string }>
-  >([])
-
+  Array<{
+    name: string
+    type: string
+    patient: string
+    date: string
+    hash: string
+    blockchainAddress: string
+    txSignature?: string 
+  }>
+>([])
+  const { publicKey, sendTransaction } = useWallet()
   const recordTypes = [
     "Lab Results",
     "X-Ray",
@@ -44,29 +55,33 @@ export default function DoctorUploadReportPage() {
       alert("Please fill all fields and select files")
       return
     }
-
+  
+    if (!publicKey) {
+      alert("Please connect your Solana wallet first!")
+      return
+    }
+  
     setIsUploading(true)
     setUploadProgress(0)
-
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 90) {
-          clearInterval(interval)
-          return prev
-        }
-        return prev + Math.random() * 30
-      })
-    }, 300)
-
-    // Simulate blockchain upload
-    setTimeout(() => {
-      clearInterval(interval)
-      setUploadProgress(100)
-
-      // Add to uploaded reports
-      files.forEach((file) => {
-        const mockHash = `0x${Math.random().toString(16).substring(2, 16)}`
+  
+    try {
+      const ipfsClient = await getIPFSClient()
+      for (const [index, file] of files.entries()) {
+        const buffer = await file.arrayBuffer()
+        // const added = await ipfsClient.add(buffer)
+        // const cid = added.path
+        const cid = await uploadToPinata(file);
+  
+        setUploadProgress(((index + 1) / files.length) * 100)
+        //  Record on Solana 
+        const signature = await storeReportOnSolana(
+          { publicKey, sendTransaction },
+          cid,
+          recordType
+        )
+  
+        console.log("📦 CID stored on Solana with tx:", signature)
+  
         setUploadedReports((prev) => [
           ...prev,
           {
@@ -74,20 +89,24 @@ export default function DoctorUploadReportPage() {
             type: recordType,
             patient: patientName,
             date: new Date().toLocaleDateString(),
-            hash: mockHash,
-            blockchainAddress: blockchainAddress,
+            hash: cid,
+            blockchainAddress,
+            txSignature: signature,
           },
         ])
-      })
-
+      }
+  
+      alert(" Reports uploaded to IPFS and recorded on Solana!")
+    } catch (error) {
+      console.error("Upload failed:", error)
+      alert("Error uploading files. Check console for details.")
+    } finally {
       setIsUploading(false)
       setUploadProgress(0)
-      setFiles([])
-      setRecordType("")
-      setPatientName("")
-      setBlockchainAddress("")
-    }, 2000)
+    }
   }
+  
+  
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -228,48 +247,59 @@ export default function DoctorUploadReportPage() {
           </CardContent>
         </Card>
       </motion.div>
+{/* Uploaded Reports Section */}
+<div className="mt-10">
+  <h2 className="text-xl font-semibold mb-3">📄 Uploaded Reports</h2>
 
-      {/* Uploaded Reports */}
-      {uploadedReports.length > 0 && (
-        <motion.div variants={itemVariants}>
-          <Card>
-            <CardHeader>
-              <CardTitle>Uploaded Reports</CardTitle>
-              <CardDescription>Reports stored on the Solana blockchain</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {uploadedReports.map((report, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted transition-colors"
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium">{report.name}</p>
-                      <div className="flex gap-4 text-sm text-muted-foreground mt-1">
-                        <span>Patient: {report.patient}</span>
-                        <span>{report.type}</span>
-                        <span>{report.date}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Blockchain Address: {report.blockchainAddress.substring(0, 20)}...
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs font-mono text-muted-foreground mb-2">{report.hash}</p>
-                      <Button variant="outline" size="sm" className="bg-transparent">
-                        View
-                      </Button>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
+  {uploadedReports.length === 0 ? (
+    <p className="text-gray-500">No reports uploaded yet.</p>
+  ) : (
+    <div className="space-y-3">
+      {uploadedReports.map((report, index) => (
+        <div
+          key={index}
+          className="p-4 border rounded-lg bg-white shadow-sm flex flex-col space-y-2"
+        >
+          <div>
+            <strong>📋 Name:</strong> {report.name}
+          </div>
+          <div>
+            <strong>👤 Patient:</strong> {report.patient}
+          </div>
+          <div>
+            <strong>📅 Date:</strong> {report.date}
+          </div>
+          <div>
+            <strong>🧾 Type:</strong> {report.type}
+          </div>
+          <div>
+            <strong>🪪 CID:</strong>{" "}
+            <a
+              href={`https://ipfs.io/ipfs/${report.hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 underline"
+            >
+              View on IPFS
+            </a>
+          </div>
+          <div>
+            <strong>🔗 Solana Tx:</strong>{" "}
+            <a
+              href={`https://explorer.solana.com/tx/${report.txSignature}?cluster=devnet`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 underline"
+            >
+              View on Solana Explorer
+            </a>
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
 
       {/* Info Alert */}
       <motion.div variants={itemVariants}>
