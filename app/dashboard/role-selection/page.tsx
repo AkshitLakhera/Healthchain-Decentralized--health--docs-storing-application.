@@ -13,14 +13,12 @@ export default function RoleSelection() {
       return
     }
 
-    // 👇 store the selected role in localStorage
     localStorage.setItem("userRole", role)
 
-    // 👇 redirect based on role
     if (role === "doctor") {
       router.push("/dashboard/doctor")
     } else {
-      router.push("/patient-dashboard")
+      router.push("/dashboard/patient")
     }
   }
 

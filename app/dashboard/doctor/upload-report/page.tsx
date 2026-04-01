@@ -70,7 +70,8 @@ export default function DoctorUploadReportPage() {
         const buffer = await file.arrayBuffer()
         // const added = await ipfsClient.add(buffer)
         // const cid = added.path
-        const cid = await uploadToPinata(file);
+        const patientAddress = blockchainAddress?.toString()
+        const cid = await uploadToPinata(file,patientAddress);
   
         setUploadProgress(((index + 1) / files.length) * 100)
         //  Record on Solana 

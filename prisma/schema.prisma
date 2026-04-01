@@ -1,0 +1,29 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Report {
+  id             String   @id @default(cuid())
+  patientWallet  String
+  cid            String
+  fileName       String
+  doctor         String
+  createdAt      DateTime @default(now())
+}
+model ShareLink {
+  id            String   @id @default(cuid())
+  cid           String
+  patientWallet String
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+}

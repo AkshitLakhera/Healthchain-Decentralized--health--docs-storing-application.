@@ -1,60 +1,72 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
+import { useEffect, useState } from "react"
+import { useWallet } from "@solana/wallet-adapter-react"
 
 export default function PatientDashboard() {
+  const { publicKey } = useWallet()
+  const [reports, setReports] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!publicKey) return
+
+    const wallet = publicKey.toString()
+    console.log(wallet);
+
+    fetch(`/api/report?wallet=${wallet}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setReports(data)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [publicKey])
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
+      transition: { staggerChildren: 0.1 },
     },
   }
 
   const itemVariants = {
     hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: { duration: 0.5 },
-    },
+    visible: { opacity: 1, y: 0 },
   }
 
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-8">
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="space-y-8"
+    >
       {/* Header */}
-      <motion.div variants={itemVariants} className="space-y-2">
+      <motion.div variants={itemVariants}>
         <h1 className="text-4xl font-bold">Patient Dashboard</h1>
-        <p className="text-muted-foreground">Manage your health records and medical documents</p>
+        <p className="text-muted-foreground">
+          Manage your health records securely
+        </p>
       </motion.div>
 
-      {/* Stats Grid */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
-          { label: "Medical Records", value: "12", icon: "📋" },
-          { label: "Appointments", value: "3", icon: "📅" },
-          { label: "Prescriptions", value: "5", icon: "💊" },
-        ].map((stat, i) => (
-          <Card key={i}>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{stat.label}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <span className="text-3xl font-bold">{stat.value}</span>
-                <span className="text-2xl">{stat.icon}</span>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </motion.div>
-
-      {/* Main Content */}
+      {/* Tabs */}
       <motion.div variants={itemVariants}>
         <Tabs defaultValue="records" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
@@ -63,26 +75,109 @@ export default function PatientDashboard() {
             <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
           </TabsList>
 
+          {/*  Medical Records */}
           <TabsContent value="records" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle>Your Medical Records</CardTitle>
-                <CardDescription>All your health documents stored securely on the blockchain</CardDescription>
+                <CardDescription>
+                  Encrypted reports stored on IPFS
+                </CardDescription>
               </CardHeader>
+
               <CardContent className="space-y-4">
-                {[
-                  { name: "Annual Checkup", date: "2024-10-15", doctor: "Dr. Smith" },
-                  { name: "Blood Test Results", date: "2024-10-10", doctor: "Lab Services" },
-                  { name: "X-Ray Report", date: "2024-09-28", doctor: "Radiology" },
-                ].map((record, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 border rounded-lg">
+                {/* Loading */}
+                {loading && (
+                  <p className="text-muted-foreground">
+                    Loading reports...
+                  </p>
+                )}
+
+                {/* Empty */}
+                {!loading && reports.length === 0 && (
+                  <p className="text-muted-foreground">
+                    No reports found
+                  </p>
+                )}
+
+                {/*  Dynamic Reports */}
+                {reports.map((record, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between p-3 border rounded-lg"
+                  >
                     <div>
-                      <p className="font-medium">{record.name}</p>
-                      <p className="text-sm text-muted-foreground">{record.doctor}</p>
+                      <p className="font-medium">
+                        {record.fileName.replace(".enc", "")}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {record.doctor}
+                      </p>
                     </div>
+
                     <div className="text-right">
-                      <p className="text-sm text-muted-foreground">{record.date}</p>
-                      <Button variant="outline" size="sm" className="mt-1 bg-transparent">
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(record.createdAt).toLocaleDateString()}
+                      </p>
+                            <Button
+              onClick={async () => {
+                const res = await fetch("/api/share", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    cid: record.cid,
+                    patientWallet: publicKey?.toString(),
+                  }),
+                })
+
+                console.log("Status:", res.status)
+
+                const text = await res.text()
+                console.log("Raw response:", text)
+                
+                const data = JSON.parse(text)
+
+                navigator.clipboard.writeText(
+                  window.location.origin + data.url
+                )
+
+                alert("Share link copied (valid for 10 mins)")
+              }}
+            >
+              Share
+            </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-1"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(
+                              `https://gateway.pinata.cloud/ipfs/${record.cid}`
+                            )
+
+                            const encrypted = await res.text()
+
+                            const { decryptData } = await import(
+                              "@/lib/encryption"
+                            )
+
+                            const bytes = decryptData(encrypted)
+
+                            const blob = new Blob([bytes], {
+                              type: "application/pdf",
+                            })
+
+                            const url = URL.createObjectURL(blob)
+                            window.open(url)
+                          } catch (err) {
+                            alert("Failed to open report")
+                          }
+                        }}
+                      >
                         View
                       </Button>
                     </div>
@@ -92,24 +187,30 @@ export default function PatientDashboard() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="appointments" className="space-y-4">
+          {/* Appointments */}
+          <TabsContent value="appointments">
             <Card>
               <CardHeader>
-                <CardTitle>Upcoming Appointments</CardTitle>
+                <CardTitle>Appointments</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">No upcoming appointments scheduled</p>
+                <p className="text-muted-foreground">
+                  No appointments yet
+                </p>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="prescriptions" className="space-y-4">
+          {/* Prescriptions */}
+          <TabsContent value="prescriptions">
             <Card>
               <CardHeader>
-                <CardTitle>Active Prescriptions</CardTitle>
+                <CardTitle>Prescriptions</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">No active prescriptions</p>
+                <p className="text-muted-foreground">
+                  No prescriptions yet
+                </p>
               </CardContent>
             </Card>
           </TabsContent>

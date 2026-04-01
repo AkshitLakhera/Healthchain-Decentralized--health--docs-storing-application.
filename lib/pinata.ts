@@ -1,17 +1,20 @@
 // Alternative approach using Pinata SDK directly
-export async function uploadToPinata(file: File): Promise<string> {
+import { encryptData } from "@/lib/encryption"
+export async function uploadToPinata(file: File,patientAddress:string): Promise<string> {
     const apiKey = process.env.NEXT_PUBLIC_PINATA_API_KEY
-    const apiSecret = process.env.NEXT_PUBLIC_PINATA_API_SECRET
+    const apiSecret =  process.env.NEXT_PUBLIC_PINATA_API_SECRET
   
     if (!apiKey || !apiSecret) {
       throw new Error("Missing Pinata credentials in environment variables")
     }
-  
+    
+  const encrypted = await encryptData(file)
+  const encryptedBlob = new Blob([encrypted], { type: "text/plain" })
     const formData = new FormData()
-    formData.append("file", file)
+formData.append("file", encryptedBlob, file.name + ".enc")
   
     try {
-      console.log("🚀 Uploading to Pinata:", file.name)
+      console.log(" Uploading to Pinata:", file.name)
       
       const response = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
         method: "POST",
@@ -31,10 +34,24 @@ export async function uploadToPinata(file: File): Promise<string> {
       }
   
       const data = JSON.parse(responseText)
-      console.log("✅ Upload successful, CID:", data.IpfsHash)
+      console.log(" Upload successful, CID:", data.IpfsHash)
+      const cid = data.IpfsHash
+
+await fetch("/api/report", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    patientWallet: patientAddress,
+    cid,
+    fileName: file.name + ".enc",
+    doctor: "Dr XYZ",
+  }),
+})
       return data.IpfsHash // Returns the CID
     } catch (error) {
-      console.error("❌ Pinata upload error:", error)
+      console.error(" Pinata upload error:", error)
       throw error
     }
   }
